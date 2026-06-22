@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Uoojo Delivery Partner Salary Management System",
   "scripts": {
-    "install:all": "npm install --prefix backend && npm install --prefix frontend --legacy-peer-deps",
+    "install:all": "npm install --prefix backend && npm install --include=dev --prefix frontend --legacy-peer-deps",
     "backend": "npm run start --prefix backend",
     "backend:dev": "npm run dev --prefix backend",
     "frontend": "npm run dev --prefix frontend",
