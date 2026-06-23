@@ -1,27 +1,8 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../database');
+const supabase = require('../database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'uoojo_secret_key_12345';
-
-// Helper functions for Promise-based DB queries
-const dbGet = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-};
-
-const dbRun = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
-};
 
 // Register user
 exports.register = async (req, res) => {
@@ -41,7 +22,13 @@ exports.register = async (req, res) => {
 
   try {
     // Check if user already exists
-    const existingUser = await dbGet('SELECT * FROM users WHERE email = ?', [email.toLowerCase()]);
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    if (checkError) throw checkError;
     if (existingUser) {
       return res.status(400).json({ message: 'Email is already registered.' });
     }
@@ -50,12 +37,15 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Insert user
-    const result = await dbRun(
-      'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
-      [name, email.toLowerCase(), hashedPassword]
-    );
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert([{ name, email: email.toLowerCase(), password: hashedPassword }])
+      .select()
+      .single();
 
-    const userId = result.lastID;
+    if (insertError) throw insertError;
+
+    const userId = newUser.id;
 
     // Generate JWT token
     const token = jwt.sign({ id: userId, email: email.toLowerCase(), name }, JWT_SECRET, {
@@ -69,7 +59,7 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({ message: 'Server error during registration.' });
+    res.status(500).json({ message: 'Server error during registration.', error: error.message });
   }
 };
 
@@ -83,7 +73,13 @@ exports.login = async (req, res) => {
 
   try {
     // Check user
-    const user = await dbGet('SELECT * FROM users WHERE email = ?', [email.toLowerCase()]);
+    const { data: user, error: loginError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    if (loginError) throw loginError;
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials.' });
     }
@@ -106,21 +102,27 @@ exports.login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Server error during login.' });
+    res.status(500).json({ message: 'Server error during login.', error: error.message });
   }
 };
 
 // Get profile
 exports.getProfile = async (req, res) => {
   try {
-    const user = await dbGet('SELECT id, name, email FROM users WHERE id = ?', [req.user.id]);
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, name, email')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
+    if (error) throw error;
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
     res.status(200).json({ user });
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({ message: 'Server error fetching profile.' });
+    res.status(500).json({ message: 'Server error fetching profile.', error: error.message });
   }
 };
 
@@ -134,19 +136,24 @@ exports.updateProfile = async (req, res) => {
 
   try {
     // Check if new email is taken by another user
-    const existingUser = await dbGet('SELECT * FROM users WHERE email = ? AND id != ?', [
-      email.toLowerCase(),
-      req.user.id,
-    ]);
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .neq('id', req.user.id)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
     if (existingUser) {
       return res.status(400).json({ message: 'Email is already taken by another account.' });
     }
 
-    await dbRun('UPDATE users SET name = ?, email = ? WHERE id = ?', [
-      name,
-      email.toLowerCase(),
-      req.user.id,
-    ]);
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ name, email: email.toLowerCase() })
+      .eq('id', req.user.id);
+
+    if (updateError) throw updateError;
 
     // Generate new token with updated information
     const token = jwt.sign({ id: req.user.id, email: email.toLowerCase(), name }, JWT_SECRET, {
@@ -160,7 +167,7 @@ exports.updateProfile = async (req, res) => {
     });
   } catch (error) {
     console.error('Update profile error:', error);
-    res.status(500).json({ message: 'Server error updating profile.' });
+    res.status(500).json({ message: 'Server error updating profile.', error: error.message });
   }
 };
 
@@ -181,7 +188,13 @@ exports.changePassword = async (req, res) => {
   }
 
   try {
-    const user = await dbGet('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
+    if (error) throw error;
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
@@ -196,11 +209,16 @@ exports.changePassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     // Update password
-    await dbRun('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, req.user.id]);
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password: hashedPassword })
+      .eq('id', req.user.id);
+
+    if (updateError) throw updateError;
 
     res.status(200).json({ message: 'Password changed successfully.' });
   } catch (error) {
     console.error('Change password error:', error);
-    res.status(500).json({ message: 'Server error changing password.' });
+    res.status(500).json({ message: 'Server error changing password.', error: error.message });
   }
 };

@@ -1,0 +1,9 @@
+# Supabase Project Configuration
+project_id = "uoojo-salary"
+
+# Individual settings for Edge Functions
+[functions.todos]
+verify_jwt = true # Set to false if using non-"user" auth modes
+
+[functions.orders]
+verify_jwt = true

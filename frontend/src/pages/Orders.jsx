@@ -17,6 +17,8 @@ import {
   FileText,
   FileSpreadsheet
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const Orders = () => {
   // Routing query param check
@@ -248,14 +250,180 @@ const Orders = () => {
       link.click();
       document.body.removeChild(link);
       
-      showToast('Report downloaded successfully!', 'success');
+      showToast('CSV report downloaded successfully!', 'success');
     } catch (err) {
       console.error(err);
       showToast('Failed to generate export file.', 'error');
     }
   };
 
-  // Download Monthly Report specifically (filters active month records and exports)
+  // Generate PDF report utility function
+  const generatePDFReport = (records, reportTitle, filename) => {
+    try {
+      const doc = new jsPDF();
+      
+      // Header Band
+      doc.setFillColor(79, 70, 229); // Primary Indigo color (#4f46e5)
+      doc.rect(0, 0, 210, 40, 'F');
+      
+      // Title
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.text('UOOJO DELIVERY SALARY', 14, 18);
+      
+      // Subtitle
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(224, 231, 255); // Light indigo
+      doc.text(reportTitle.toUpperCase(), 14, 28);
+      
+      // Generation Date
+      const todayStr = new Date().toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      doc.setFontSize(9);
+      doc.setTextColor(224, 231, 255);
+      doc.text(`Generated: ${todayStr}`, 145, 18);
+      
+      // Calculations
+      let totalSalary = 0;
+      let totalAllowance = 0;
+      records.forEach(item => {
+        totalSalary += parseFloat(item.salary || 0);
+        totalAllowance += parseFloat(item.allowance || 0);
+      });
+      const netEarnings = totalSalary + totalAllowance;
+      
+      // Stats Panels / Summary Grid
+      // Total Deliveries
+      doc.setFillColor(243, 244, 246); // Light slate-100
+      doc.roundedRect(14, 46, 56, 24, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(31, 41, 55);
+      doc.text(records.length.toString(), 18, 56);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(107, 114, 128);
+      doc.text('Total Deliveries', 18, 64);
+      
+      // Total Salary
+      doc.setFillColor(243, 244, 246);
+      doc.roundedRect(77, 46, 56, 24, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(31, 41, 55);
+      doc.text(`Rs. ${totalSalary.toFixed(2)}`, 81, 56);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(107, 114, 128);
+      doc.text('Total Base Salary', 81, 64);
+      
+      // Net Earnings
+      doc.setFillColor(236, 253, 245); // Light emerald-50
+      doc.roundedRect(140, 46, 56, 24, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(5, 150, 105); // Emerald-600
+      doc.text(`Rs. ${netEarnings.toFixed(2)}`, 144, 56);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(107, 114, 128);
+      doc.text('Net Earnings', 144, 64);
+      
+      // AutoTable
+      const tableColumn = ["Date", "Location", "Order Type", "Salary", "Allowance", "Total", "Notes"];
+      const tableRows = records.map(item => [
+        item.date,
+        item.location,
+        item.order_type,
+        `Rs. ${parseFloat(item.salary).toFixed(2)}`,
+        `Rs. ${parseFloat(item.allowance).toFixed(2)}`,
+        `Rs. ${(parseFloat(item.salary) + parseFloat(item.allowance)).toFixed(2)}`,
+        item.notes || '—'
+      ]);
+      
+      autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 78,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [79, 70, 229],
+          textColor: [255, 255, 255],
+          fontSize: 9,
+          fontStyle: 'bold',
+          halign: 'left'
+        },
+        bodyStyles: {
+          fontSize: 8.5,
+          textColor: [55, 65, 81]
+        },
+        columnStyles: {
+          0: { cellWidth: 22 }, // Date
+          1: { cellWidth: 35 }, // Location
+          2: { cellWidth: 30 }, // Order Type
+          3: { cellWidth: 22 }, // Salary
+          4: { cellWidth: 22 }, // Allowance
+          5: { cellWidth: 22 }, // Total
+          6: { cellWidth: 'auto' } // Notes
+        },
+        alternateRowStyles: {
+          fillColor: [249, 250, 251]
+        },
+        margin: { top: 78 },
+        didDrawPage: (data) => {
+          // Footer
+          const pageCount = doc.internal.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.setTextColor(156, 163, 175); // gray-400
+          doc.text("Uoojo Salary Management System", 14, 287);
+          doc.text(`Page ${pageCount}`, 196, 287, { align: 'right' });
+        }
+      });
+      
+      doc.save(filename);
+      showToast('PDF downloaded successfully!', 'success');
+    } catch (err) {
+      console.error('PDF Generation Error:', err);
+      showToast('Failed to generate PDF file.', 'error');
+    }
+  };
+
+  // Export to PDF utility (using current filters)
+  const handleExportPDF = async () => {
+    try {
+      let url = '/orders?limit=10000'; // Get all relevant records
+      if (search) url += `&search=${encodeURIComponent(search)}`;
+      if (filterType) {
+        url += `&filterType=${filterType}`;
+        if (filterType === 'custom' && startDate && endDate) {
+          url += `&startDate=${startDate}&endDate=${endDate}`;
+        }
+      }
+
+      const res = await api.get(url);
+      const recordsToExport = res.data.orders;
+
+      if (recordsToExport.length === 0) {
+        showToast('No records available to export.', 'warning');
+        return;
+      }
+
+      const filename = `Uoojo_Salary_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      generatePDFReport(recordsToExport, 'Earnings Export Report', filename);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to generate PDF export.', 'error');
+    }
+  };
+
+  // Download Monthly Report specifically (filters active month records and exports to PDF)
   const handleDownloadMonthlyReport = async () => {
     try {
       const today = new Date();
@@ -272,34 +440,11 @@ const Orders = () => {
         return;
       }
 
-      const headers = ['Date', 'Location', 'Order Type', 'Salary (INR)', 'Allowance (INR)', 'Total (INR)', 'Notes'];
-      const rows = records.map(item => [
-        item.date,
-        `"${item.location.replace(/"/g, '""')}"`,
-        item.order_type,
-        item.salary,
-        item.allowance,
-        item.salary + item.allowance,
-        `"${(item.notes || '').replace(/"/g, '""')}"`
-      ]);
-
-      const csvContent = "\uFEFF" + [
-        headers.join(','),
-        ...rows.map(e => e.join(','))
-      ].join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const currentMonthStr = today.toLocaleString('default', { month: 'long', year: 'numeric' }).replace(' ', '_');
-      const filename = `Uoojo_Monthly_Report_${currentMonthStr}.csv`;
+      const currentMonthStr = today.toLocaleString('default', { month: 'long', year: 'numeric' });
+      const currentMonthFileStr = currentMonthStr.replace(' ', '_');
+      const filename = `Uoojo_Monthly_Report_${currentMonthFileStr}.pdf`;
       
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      showToast(`${today.toLocaleString('default', { month: 'long' })} report downloaded.`, 'success');
+      generatePDFReport(records, `Monthly Report - ${currentMonthStr}`, filename);
     } catch (err) {
       console.error(err);
       showToast('Failed to download monthly report.', 'error');
@@ -330,11 +475,15 @@ const Orders = () => {
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={handleDownloadMonthlyReport}>
-            <FileText size={18} />
-            <span>Monthly Report</span>
+            <FileText size={18} style={{ color: '#ef4444' }} />
+            <span>Monthly Report (PDF)</span>
+          </button>
+          <button className="btn btn-secondary" onClick={handleExportPDF}>
+            <FileText size={18} style={{ color: '#6366f1' }} />
+            <span>Export PDF</span>
           </button>
           <button className="btn btn-secondary" onClick={() => handleExportCSV(false)}>
-            <FileSpreadsheet size={18} />
+            <FileSpreadsheet size={18} style={{ color: '#10b981' }} />
             <span>Export CSV</span>
           </button>
           <button className="btn btn-primary" onClick={openAddModal}>
@@ -650,16 +799,22 @@ const Orders = () => {
                 {/* Location */}
                 <div className="form-group">
                   <label htmlFor="modal-location">Location</label>
-                  <input
+                  <select
                     id="modal-location"
-                    type="text"
                     name="location"
                     className="form-control"
-                    placeholder="e.g., Chennai Central, T-Nagar"
                     value={formData.location}
                     onChange={handleFormChange}
                     required
-                  />
+                  >
+                    <option value="Mill Road">Mill Road</option>
+                    <option value="Pattakarai">Pattakarai</option>
+                    <option value="Pillayanmanai">Pillayanmanai</option>
+                    <option value="Moses Street">Moses Street</option>
+                    <option value="Mukuperi">Mukuperi</option>
+                    <option value="Alwar">Alwar</option>
+                    <option value="other">Other</option>
+                  </select>
                 </div>
 
                 {/* Order Type */}

@@ -1,41 +1,17 @@
-const sqlite3 = require('sqlite3').verbose();
+const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
-const dbPath = process.env.DATABASE_PATH || path.resolve(__dirname, 'database.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to the SQLite database.');
-    db.serialize(() => {
-      // Create users table
-      db.run(`
-        CREATE TABLE IF NOT EXISTS users (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          email TEXT UNIQUE NOT NULL,
-          password TEXT NOT NULL
-        )
-      `);
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
 
-      // Create orders table
-      db.run(`
-        CREATE TABLE IF NOT EXISTS orders (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id INTEGER NOT NULL,
-          date TEXT NOT NULL,
-          location TEXT NOT NULL,
-          salary REAL NOT NULL,
-          allowance REAL NOT NULL,
-          order_type TEXT NOT NULL,
-          notes TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        )
-      `);
-      console.log('Database tables initialized.');
-    });
-  }
-});
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Error: SUPABASE_URL or SUPABASE_SECRET_KEY/SUPABASE_PUBLISHABLE_KEY is missing from environment variables.');
+  process.exit(1);
+}
 
-module.exports = db;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+console.log('Connected to Supabase database successfully.');
+
+module.exports = supabase;
