@@ -123,7 +123,7 @@ const Orders = () => {
     setEditingOrder(null);
     setFormData({
       date: new Date().toISOString().split('T')[0],
-      location: '',
+      location: 'Mill Road',
       salary: '',
       allowance: '',
       order_type: 'Normal Delivery',
@@ -813,6 +813,9 @@ const Orders = () => {
                     <option value="Moses Street">Moses Street</option>
                     <option value="Mukuperi">Mukuperi</option>
                     <option value="Alwar">Alwar</option>
+                    <option value="Agapaikulam">Agapaikulam</option>
+                    <option value="Nazareth">Nazareth</option>
+                    <option value="Church Road">Church Road</option>
                     <option value="other">Other</option>
                   </select>
                 </div>
